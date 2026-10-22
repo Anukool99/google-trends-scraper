@@ -1,0 +1,10 @@
+{
+    "actorSpecification": 1,
+    "name": "google-trends-scraper",
+    "title": "Google Trends Scraper",
+    "description": "Collect Google Trends interest over time and related queries for a batch of keywords.",
+    "version": "0.1",
+    "buildTag": "latest",
+    "input": "./input_schema.json",
+    "dockerfile": "../Dockerfile"
+}

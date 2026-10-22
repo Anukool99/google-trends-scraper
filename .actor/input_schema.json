@@ -1,0 +1,74 @@
+{
+    "title": "Google Trends Scraper input",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "keywords": {
+            "title": "Keywords",
+            "type": "array",
+            "description": "Search terms to look up (1-20). Each keyword is queried separately, so its 0-100 interest values are scaled to that keyword only and are not comparable across keywords.",
+            "editor": "stringList",
+            "prefill": ["coffee"],
+            "minItems": 1,
+            "maxItems": 20
+        },
+        "geo": {
+            "title": "Region",
+            "type": "string",
+            "description": "Two-letter country code (e.g. US) or sub-region (e.g. US-CA). Leave empty for worldwide.",
+            "editor": "textfield",
+            "default": "",
+            "pattern": "^([A-Z]{2}(-[A-Z0-9]{1,3})?)?$"
+        },
+        "timeRange": {
+            "title": "Time range",
+            "type": "string",
+            "description": "One of: now 1-H, now 4-H, now 1-d, now 7-d, today 1-m, today 3-m, today 12-m, today 5-y, all, or a custom range \"YYYY-MM-DD YYYY-MM-DD\" (from 2004-01-01).",
+            "editor": "textfield",
+            "default": "today 12-m",
+            "pattern": "^(now (1-H|4-H|1-d|7-d)|today (1-m|3-m|12-m|5-y)|all|\\d{4}-\\d{2}-\\d{2} \\d{4}-\\d{2}-\\d{2})$"
+        },
+        "category": {
+            "title": "Category",
+            "type": "integer",
+            "description": "Google Trends category ID. 0 means all categories.",
+            "default": 0,
+            "minimum": 0
+        },
+        "language": {
+            "title": "Language",
+            "type": "string",
+            "description": "Language for labels and related queries, e.g. en-US.",
+            "editor": "textfield",
+            "default": "en-US"
+        },
+        "includeRelatedQueries": {
+            "title": "Include related queries",
+            "type": "boolean",
+            "description": "Collect top and rising related queries for each keyword.",
+            "default": true
+        },
+        "includeRelatedTopics": {
+            "title": "Include related topics (experimental)",
+            "type": "boolean",
+            "description": "Experimental. In testing, Google returned related topics as empty for automated requests, so expect status \"empty\".",
+            "default": false
+        },
+        "maxRetries": {
+            "title": "Max retries",
+            "type": "integer",
+            "description": "How many times to retry a request after a rate-limit (429) or server error before marking that section as failed.",
+            "default": 5,
+            "minimum": 0,
+            "maximum": 8
+        },
+        "proxyConfiguration": {
+            "title": "Proxy configuration",
+            "type": "object",
+            "description": "Google rate-limits automated requests heavily. Residential proxy is recommended.",
+            "editor": "proxy",
+            "prefill": { "useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"] }
+        }
+    },
+    "required": ["keywords"]
+}

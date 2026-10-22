@@ -1,0 +1,12 @@
+.git
+node_modules
+dist
+storage
+apify_storage
+coverage
+test
+scripts
+.env
+.env.*
+*.log
+IMPLEMENTATION_PLAN.md
