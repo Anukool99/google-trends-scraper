@@ -111,6 +111,61 @@ Shape findings (measured, fixtures saved):
 5. A nonexistent term can return noisy non-null points (hourly), so
    "no data" cannot be detected reliably. Report what Google returns.
 
+### 1c. Part 6 local verification (MEASURED, 2026-10-22 14:15–14:25 UTC, residential IP, no proxy)
+
+Setup: `npm run build`, then `npx tsx scripts/smoke.ts …` (built `dist/main.js`,
+fresh temp storage dir, no proxy, default `maxRetries` 5, Node v24.19.0 on
+Windows). Runs were sequential. Duration = wall clock of the child process. Peak
+RSS = `process.resourceUsage().maxRSS` of the Actor process.
+
+| Run | Keywords / geo / time | Exit | Duration | s / keyword | Peak RSS | Retries (429) | Timeline | Related queries | Related topics | Schema-valid |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | coffee, solar panels, chatgpt / US / today 12-m | 0 | 29.3 s | 9.8 | 109 MB | 0 | 3/3 ok | 3/3 ok | skipped | 3/3 |
+| 2 | coffee, `--topics` / US / today 12-m | 0 | 13.2 s | 13.2 | 107 MB | 0 | 1/1 ok | 1/1 ok | 1/1 **empty** | 1/1 |
+| 3 | 10 mixed (nike, running shoes, café, how to learn python fast, zxqvbnm-nonexistent-term, bitcoin, taylor swift, weather, iphone, électricité) / worldwide / today 5-y | 0 | 96.0 s | 9.6 | 109 MB | 1 (multiline, recovered on retry 1) | 10/10 ok | 9 ok + 1 empty | skipped | 10/10 |
+| 4 | 21 keywords (invalid input) | 1 | 1.2 s | — | 82 MB | 0 | — | — | — | no records |
+
+Section success (ok + empty, measured): 100% for every section across 14 keyword
+scrapes. Measured cost driver: ~8–13 s per keyword, dominated by the 3 s request
+gap (3 requests per keyword). Memory ~110 MB peak, so the 256 MB-minimum Apify
+memory is enough (assumed to hold on the platform; not measured there).
+
+Manual inspection (measured, all 14 records):
+- Dates ascending, exactly 7 days apart (all were `week`; 12-m → 53, 5-y → 262
+  points). Only the last point has `isPartial: true`. Interest is 0–100 with at
+  least one 100 in every non-empty series.
+- Every rising item has `isBreakout === (formattedValue === "Breakout")`; no top
+  item is a breakout. Every link has the shape
+  `https://trends.google.com/trends/explore?q=<encoded>&date=<range>[&geo=US]`,
+  with non-ASCII percent-encoded (`caf%C3%A9`).
+- Labels have no non-ASCII spaces; the only non-ASCII character is the en dash
+  in weekly ranges (`Oct 18 – 24, 2026`).
+- Nonexistent term (5-y): keyword `ok`, related queries `empty`, but the
+  **timeline is `ok`** because 1 of 262 points has data (`2022-01-16`, interest
+  100) and 261 are `null`. This matches the Part 4 contract and §1b.5, so it is
+  not a bug, but users may read it as a real spike. It is worth a README note.
+- Surprising (cannot be verified without a browser): the US 12-m rising queries for
+  `coffee` and `solar panels` include unrelated generic entries ("home workout
+  routines", "laptop stand", "running shoes", "abraham quiros villalba …", spam
+  domains). These could be spam in Google's own data or decoy data for
+  `USER_TYPE_SCRAPER` clients. Compare with trends.google.com before advertising
+  related queries.
+  - **Checked (MEASURED, 2026-10-22, Chrome, signed-in user, same IP):**
+    trends.google.com for `coffee` / US / past 12 months shows the same rising
+    list in the same order (home workout routines, pet care tips, top songs
+    this week, gardening ideas, all Breakout). So it is **Google's own data,
+    not decoy data for scrapers**, and the Actor returns it faithfully. The
+    README should say that rising queries are Google's raw data and can
+    include off-topic entries.
+  - The same page shows **related topics with data** (e.g. Starbucks +350%,
+    Coffee grinder +60%). Our requests get `rankedList` empty, which
+    confirms the empty topics are specific to scraper clients, as §1a
+    found.
+- Only one 429 in 14 keywords. The Part 0 early-burst behaviour (§1a) did not
+  recur, probably because this IP was already warm from Part 0 (assumed).
+- Tooling note: Windows PowerShell 5.1 drops a bare `""` argument, so worldwide
+  is passed as `--geo=`.
+
 ## 2. MVP scope
 
 **In:** batch of keywords (each queried separately), geo, time range, category,
