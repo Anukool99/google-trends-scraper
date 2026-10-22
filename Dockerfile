@@ -16,7 +16,7 @@ RUN npm ci --omit=dev --omit=optional --audit=false \
     && echo "NPM version:" && npm --version \
     && rm -r ~/.npm
 
-COPY --from=builder --chown=myuser /home/myuser/dist ./dist
+COPY --from=builder --chown=myuser /usr/src/app/dist ./dist
 COPY --chown=myuser .actor ./.actor
 
 CMD ["npm", "start", "--silent"]

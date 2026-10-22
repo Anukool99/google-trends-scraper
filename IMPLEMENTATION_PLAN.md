@@ -166,6 +166,34 @@ Manual inspection (measured, all 14 records):
 - Tooling note: Windows PowerShell 5.1 drops a bare `""` argument, so worldwide
   is passed as `--geo=`.
 
+### 1d. Part 6 cloud verification (MEASURED, 2026-10-22 14:43 UTC, Apify FREE plan)
+
+Private Actor `QCfEoZk3mKfRMcbhv`, build 0.1.2, run `7sF0qwKV9wJOy0CrV`.
+Input: `coffee`, `solar panels`, `chatgpt`; US; `today 12-m`; RESIDENTIAL proxy;
+256 MB.
+
+| Metric | Cloud (residential) | Local (§1c run 1) |
+|---|---|---|
+| Result | 3 ok, exit SUCCEEDED | 3 ok |
+| Duration | 28.1 s scraping, 31.0 s billed runtime | 29.3 s |
+| Retries / 429s | 0 | 0 |
+| Peak memory | 64 MB (platform stat) | 109 MB RSS (different measure) |
+| Schema | 3/3 valid | 3/3 valid |
+| Compute | 0.00216 CU = $0.00043 | — |
+| Residential proxy | ~40 KB = $0.00032 | — |
+| **Total cost** | **$0.00088** (≈ $0.0003 per keyword) | free |
+
+- The data matches the local run: 53 weekly points, last point partial, max
+  100, and the same off-topic rising queries for `coffee`. So the rising
+  queries don't depend on the IP or network.
+- Extrapolated, assumed: a 20-keyword run is about 3–4 minutes and about
+  $0.006. The free $5 credit covers about 800 such runs a month.
+- The first build failed because the Dockerfile copied `dist` from
+  `/home/myuser`. The `apify/actor-node:22` workdir is `/usr/src/app`.
+  Fixed; there was no local Docker to catch it.
+- **Not tested yet:** sustained 429s on residential IPs over long batches,
+  so the risk from Part 5 that a session never rotates is still open.
+
 ## 2. MVP scope
 
 **In:** batch of keywords (each queried separately), geo, time range, category,
