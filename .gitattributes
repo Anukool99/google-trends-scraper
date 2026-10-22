@@ -1,0 +1,3 @@
+* text=auto eol=lf
+# Recorded source responses must stay byte-identical to what Google returned.
+test/fixtures/** -text

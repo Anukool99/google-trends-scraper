@@ -144,6 +144,41 @@ searches, YouTube/News/Shopping properties, scheduling.
 Input errors fail the run immediately with a clear message, and nothing is
 retried.
 
+#### Validation rules (exact spec for Part 2: `parseInput(raw, now?)` in `src/input.ts`)
+
+`parseInput(raw: unknown, now: Date = new Date())` returns a fully-defaulted
+`ValidatedInput` or throws `InputError`. Rules:
+
+- **All problems at once.** `InputError` lists every problem in one message,
+  and `error.issues` is a `string[]` with one entry per problem. Each issue
+  starts with the field path, e.g. `keywords[2]: …`.
+- **Missing values.** `raw` that is `null`, `undefined` or not a plain object
+  gives an `InputError` saying `keywords` is required. A field that is
+  `undefined` or `null` gets its default. Unknown fields are ignored.
+- **`keywords`:**
+  - Must be an array of strings; any non-string item is an issue.
+  - Each item is trimmed. An item that is empty after trimming is an issue.
+  - An item longer than 100 characters (after trimming) is an issue.
+  - Duplicates are removed **case-insensitively**, keeping the first
+    occurrence and its original casing.
+  - After deduplication the count must be 1–20. More than 20 is always
+    reported, even alongside item issues. Fewer than 1 is reported only when
+    no item has an issue, because fixing an item could resolve it.
+- **`geo`:** a string. It is trimmed and upper-cased, then must match
+  `^([A-Z]{2}(-[A-Z0-9]{1,3})?)?$`. `""` means worldwide.
+- **`timeRange`:** a string, trimmed. It must be one of the presets
+  (case-sensitive) or `YYYY-MM-DD YYYY-MM-DD`. For a custom range:
+  - Both dates must be real calendar dates (`2024-02-30` is invalid).
+  - The start must be ≥ `2004-01-01` and ≤ the end.
+  - The end must be ≤ `now` (compared as UTC dates).
+- **`category`:** an integer ≥ 0. Floats, negatives and strings are issues.
+- **`language`:** a string matching `^[a-z]{2,3}(-[A-Za-z]{2,4})?$`.
+- **`includeRelatedQueries`, `includeRelatedTopics`:** must be booleans.
+  `"true"` and other strings are issues.
+- **`maxRetries`:** an integer from 0 to 8.
+- **`proxyConfiguration`:** optional. If present it must be a plain object,
+  which is passed through unchanged. It is `undefined` when absent.
+
 ## 4. Output schema (draft: one dataset record per keyword)
 
 ```json
