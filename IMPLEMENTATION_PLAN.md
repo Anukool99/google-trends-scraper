@@ -331,6 +331,12 @@ output.
   - A body that is not JSON → `SourceChangedError`, which is not retried.
 - **Errors.** Non-200 statuses go through `httpError`. A thrown `fetch`
   becomes `NetworkError`. Both are retried per `withRetry`.
+- **Timeout.** Each attempt gets `signal: AbortSignal.timeout(requestTimeoutMs)`,
+  default 30 000. A timeout throws inside `fetch`, so it is a `NetworkError`
+  and is retried.
+- **Proxy.** An invalid `proxyUrl` makes the constructor throw
+  `Error('Invalid proxy URL')` without quoting the URL. `close()` releases the
+  proxy agent.
 - **Security.** Neither the proxy URL nor its password appears in error
   messages. The password is checked raw and percent-decoded, including when it
   appears outside the URL.
@@ -404,6 +410,89 @@ The functions are pure: no I/O and no clock. Anything malformed throws
   points, both related sections and their items.
 - Every record built from the fixtures must validate against it (Ajv), and so
   must a record containing failed and skipped sections.
+
+### Part 5 contract (`src/run.ts` + `src/main.ts`, exact spec for tests)
+
+**`scrapeKeyword(client, query, {includeRelatedQueries, includeRelatedTopics})` → `Omit<KeywordRecord, 'scrapedAt'>`**
+
+- `client` has `explore`, `interestOverTime` and `relatedSearches` (the
+  Part 3 API). `query` = `{keyword, geo, timeRange, category}`.
+- **Order.** Calls are sequential: `explore`, then the timeseries, then
+  related queries (if enabled), then related topics (if enabled).
+- **Disabled sections** are `skipped` and make no call.
+- **Explore throws.** Every requested section is `failed` with that error, and
+  no widget calls are made.
+- **Missing widget.** If explore returned no widget for a requested section,
+  that section is `failed` with a `SOURCE_CHANGED` error naming the widget.
+- **Widget call throws.** That section alone is `failed`, and the later
+  sections are still attempted.
+- **`TokenMismatchError` (401).** The client re-runs `explore` at most
+  **once per keyword**, then retries that section once with the fresh widget.
+  - Another 401, or a failed re-explore, makes the section `failed`.
+  - Later sections use the fresh widgets.
+- **Record.** It contains the `keyword`, `geo`, `timeRange` and `category`
+  from the query. `status` = `rollupStatus` of the three sections.
+
+**`runActor(input, deps)` → `RunSummary`**
+
+- **`deps`:**
+  - `client`
+  - `pushData(record)`
+  - `setOutput(summary)`
+  - `now(): Date`
+  - `log` with `info`, `warning` and `error`
+- **Each keyword in input order.** Build the query from the input, scrape it,
+  add `scrapedAt = now().toISOString()`, then `pushData` the record before the
+  next keyword starts.
+  - A keyword that fails never stops the run.
+  - If `pushData` itself throws, the run stops with that error, because data
+    loss must be visible.
+- **Summary.** At the end `setOutput` is called once, and the summary is
+  returned:
+  `{keywords, ok, partial, failed, sections: {interestOverTime, relatedQueries, relatedTopics}, startedAt, finishedAt, durationMs}`.
+  Each entry in `sections` counts `{ok, empty, failed, skipped}`.
+- **Logs.** Exactly one line per keyword with its status: `info` for `ok`,
+  `warning` for `partial`, `error` for `failed`. Logs never contain the proxy
+  URL.
+- **Clarifications** (raised by the Part 5 tests):
+  - `startedAt` and `finishedAt` are ISO-8601 strings.
+  - When `pushData` throws, `setOutput` is **not** called. `main.ts` then
+    fails the run.
+  - When the re-explore after a 401 throws, that section is `failed` with
+    **the re-explore's error**. Later sections keep the original widgets and
+    don't re-explore again, so a 401 on them is `failed`.
+
+**`main.ts`** (Apify glue, tested by running `node dist/main.js` against a
+temporary local storage dir)
+
+- **Invalid input** → `Actor.fail(<InputError message>)`. The exit code is
+  non-zero and no records are pushed.
+- **Proxy.** If `proxyConfiguration` is given, it uses
+  `Actor.createProxyConfiguration` and one sticky session URL for the run.
+  If it is absent, there is no proxy.
+- **Exit status.**
+  - Exit 0 when at least one keyword is `ok` or `partial`.
+  - **When every keyword failed**, it calls `Actor.fail("All N keywords failed …")`
+    after pushing the records. A run with no usable data must not look
+    successful.
+- **Retry logs.** Each retry is logged as a warning with the error message,
+  which names the endpoint, plus the error code and the delay.
+- **Any other failure** goes through `Actor.fail` with a message, so the run
+  gets a status message. That covers proxy setup, an unexpected error and
+  `pushData` throwing.
+  - Proxy setup errors are reported as
+    `Proxy configuration failed: <message>`.
+  - The message has every URL's `user:password@` replaced by
+    `<credentials>@` (`src/redact.ts`).
+- **Proxy requested but unavailable.** If a proxy was requested
+  (`useApifyProxy: true` or a non-empty `proxyUrls`) but none could be
+  obtained, the run fails with `Proxy configuration failed: …` and does not
+  fall back to no proxy. The SDK only warns in that case, found during a
+  Part 5 run.
+- **Cleanup.** The client's proxy agent is closed when the run ends.
+- *(Code review, Part 5)* The proxy session is one sticky session that never
+  rotates, so one blocked exit IP fails the whole run. Part 6 will measure
+  whether rotating it on repeated 429s is needed.
 
 ### Agent roster
 

@@ -11,7 +11,7 @@ export interface FetchResponse {
     headers: { getSetCookie(): string[] };
     text(): Promise<string>;
 }
-export type FetchLike = (url: string, init: { headers: Record<string, string>; dispatcher?: unknown }) => Promise<FetchResponse>;
+export type FetchLike = (url: string, init: { headers: Record<string, string>; dispatcher?: unknown; signal?: AbortSignal }) => Promise<FetchResponse>;
 
 export interface TrendsQuery {
     keyword: string;
@@ -38,6 +38,8 @@ export interface TrendsClientOptions {
     proxyUrl?: string;
     /** Minimum gap between the start of any two requests. Part 0 measured 3 s as clean. */
     minRequestIntervalMs?: number;
+    /** Per-attempt limit for headers + body; undici's own defaults are 5 minutes each. */
+    requestTimeoutMs?: number;
     baseDelayMs?: number;
     maxDelayMs?: number;
     onRetry?: RetryOptions['onRetry'];
@@ -80,18 +82,25 @@ export class TrendsClient {
     private readonly cookies = new Map<string, string>();
     private lastRequestAt = -Infinity;
     private readonly fetch: FetchLike;
-    private readonly dispatcher: unknown;
+    private readonly dispatcher: ProxyAgent | undefined;
     private readonly sleep: (ms: number) => Promise<void>;
     private readonly now: () => number;
     private readonly minRequestIntervalMs: number;
+    private readonly requestTimeoutMs: number;
     private readonly retry: RetryOptions;
 
     constructor(private readonly options: TrendsClientOptions) {
         this.fetch = options.fetch ?? (undiciFetch as unknown as FetchLike);
-        this.dispatcher = options.proxyUrl ? new ProxyAgent(options.proxyUrl) : undefined;
+        try {
+            this.dispatcher = options.proxyUrl ? new ProxyAgent(options.proxyUrl) : undefined;
+        } catch {
+            // The original error quotes the URL, which contains credentials.
+            throw new Error('Invalid proxy URL');
+        }
         this.sleep = options.sleep ?? realSleep;
         this.now = options.now ?? Date.now;
         this.minRequestIntervalMs = options.minRequestIntervalMs ?? 3000;
+        this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
         this.retry = {
             maxRetries: options.maxRetries,
             baseDelayMs: options.baseDelayMs ?? 4000,
@@ -172,7 +181,11 @@ export class TrendsClient {
         let response: FetchResponse;
         let text: string;
         try {
-            response = await this.fetch(`${BASE_URL}/${endpoint}?${query}`, { headers, dispatcher: this.dispatcher });
+            response = await this.fetch(`${BASE_URL}/${endpoint}?${query}`, {
+                headers,
+                dispatcher: this.dispatcher,
+                signal: AbortSignal.timeout(this.requestTimeoutMs),
+            });
             this.storeCookies(response.headers.getSetCookie());
             text = await response.text();
         } catch (err) {
@@ -181,6 +194,11 @@ export class TrendsClient {
         }
         if (response.status !== 200) throw httpError(response.status, endpoint);
         return text;
+    }
+
+    /** Releases the proxy connection pool. */
+    async close(): Promise<void> {
+        await this.dispatcher?.close();
     }
 
     /** Proxy URLs carry credentials, so keep them out of anything that may be logged. */
