@@ -208,7 +208,8 @@ retried.
 Rules:
 - **No invented values.** `hasData:false` becomes `interest: null`.
 - **Failed vs empty.** A section that failed has `null` lists plus an `error`.
-  A section that came back empty has `[]`.
+  A section that came back empty has `[]`. The exception is a timeline in
+  which no point has data: it is `empty` but keeps its all-`null` points.
 - **Dates.** `date` comes from the epoch `time` field as a UTC ISO datetime,
   not from `formattedTime`. `isPartial` is `point.isPartial === true`.
 - **Values.** `top` values are relative interest (0–100). `rising` values are
@@ -340,6 +341,69 @@ output.
     first retry reports `attempt: 1`.
   - The warm-up repeat happens inside one retry attempt, so it is not counted
     in `attempts`.
+
+### Part 4 contract (`src/normalize.ts`, exact spec for tests)
+
+The functions are pure: no I/O and no clock. Anything malformed throws
+`SourceChangedError`.
+
+**`normalizeTimeline(data, widgetRequest)` → `InterestOverTime`**
+
+- **Shape check.** `data.timelineData` must be an array.
+- **Resolution** comes from `widgetRequest.resolution`, lower-cased: `MINUTE` →
+  `minute`, `HOUR` → `hour`, and so on. A missing value gives `null`.
+- **Each point** must have a numeric-string or number `time` (epoch seconds),
+  and its `value` must be an array whose first element is a number.
+  - `date` = `new Date(time*1000).toISOString()`.
+  - `label` = `formattedTime` with **every** Unicode space separator
+    (`\p{Zs}`: U+202F, U+2009, U+00A0 and so on) replaced by a normal space.
+  - `interest` = `value[0]`, or `null` when `hasData[0] === false`.
+  - `isPartial` = `point.isPartial === true`.
+- **Status.**
+  - `status` = `empty` when there are no points, or when **no** point has
+    data. All the points are still returned in `points`.
+  - Otherwise `status` = `ok`.
+
+**`normalizeRelated(data, kind: 'queries' | 'topics')` → `RelatedSection`**
+
+- **List shape.** `data.rankedList` must be an array of length 0 or 2, and
+  each entry must have a `rankedKeyword` array.
+  - Length 0 → `{status: 'empty', top: [], rising: []}`.
+  - Length 2 → index 0 is top and index 1 is rising.
+  - `status` = `empty` if both lists are empty, otherwise `ok`.
+- **Query item** → `{query, value, formattedValue, link, isBreakout}`.
+  - `query` must be a string and `value` a number.
+  - `link` = `https://trends.google.com` + the relative link, or `null` if
+    absent.
+  - `isBreakout` = `formattedValue === "Breakout"`. On top items it is always
+    `false`.
+- **Topic item** → `{mid, title, type, value, formattedValue, link, isBreakout}`,
+  taken from `item.topic` with the same rules. `mid` and `title` are required;
+  `type` is optional and becomes `""` when missing. Google never returned this
+  shape in Part 0, so it is **unverified**.
+
+**`failedSection(err)` / `skippedSection()` and their timeline equivalents**
+
+- Failed: `{status: 'failed', error: '<CODE>: <message>', top: null, rising: null}`.
+  For a timeline it is `points: null, resolution: null`. A non-`TrendsError`
+  gets the code `INTERNAL`.
+- Skipped: `{status: 'skipped', top: null, rising: null}`, with no `error`.
+
+**`rollupStatus(sections)`**
+
+- `skipped` sections are ignored.
+- `ok` = none of the rest failed. That includes every section being skipped
+  and every section being `empty`: no data is a result, not a failure.
+- `failed` = at least one section is left and all of them failed.
+- `partial` = otherwise.
+
+**`.actor/dataset_schema.json`**
+
+- Its `fields` is the JSON Schema of a `KeywordRecord`. Every object level is
+  strict (`additionalProperties: false`): the record, `interestOverTime`,
+  points, both related sections and their items.
+- Every record built from the fixtures must validate against it (Ajv), and so
+  must a record containing failed and skipped sections.
 
 ### Agent roster
 

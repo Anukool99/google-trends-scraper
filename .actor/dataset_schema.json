@@ -1,0 +1,369 @@
+{
+    "actorSpecification": 1,
+    "fields": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "keyword",
+            "geo",
+            "timeRange",
+            "category",
+            "status",
+            "interestOverTime",
+            "relatedQueries",
+            "relatedTopics",
+            "scrapedAt"
+        ],
+        "properties": {
+            "keyword": {
+                "type": "string",
+                "minLength": 1
+            },
+            "geo": {
+                "type": "string"
+            },
+            "timeRange": {
+                "type": "string"
+            },
+            "category": {
+                "type": "integer",
+                "minimum": 0
+            },
+            "status": {
+                "enum": [
+                    "ok",
+                    "partial",
+                    "failed"
+                ]
+            },
+            "interestOverTime": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "status",
+                    "resolution",
+                    "points"
+                ],
+                "properties": {
+                    "status": {
+                        "enum": [
+                            "ok",
+                            "empty",
+                            "failed",
+                            "skipped"
+                        ]
+                    },
+                    "resolution": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "error": {
+                        "type": "string"
+                    },
+                    "points": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "date",
+                                "label",
+                                "interest",
+                                "isPartial"
+                            ],
+                            "properties": {
+                                "date": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "label": {
+                                    "type": "string"
+                                },
+                                "interest": {
+                                    "type": [
+                                        "number",
+                                        "null"
+                                    ]
+                                },
+                                "isPartial": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "relatedQueries": {
+                "type": "object",
+                "required": [
+                    "status",
+                    "top",
+                    "rising"
+                ],
+                "properties": {
+                    "status": {
+                        "enum": [
+                            "ok",
+                            "empty",
+                            "failed",
+                            "skipped"
+                        ]
+                    },
+                    "error": {
+                        "type": "string"
+                    },
+                    "top": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "query",
+                                "value",
+                                "formattedValue",
+                                "link",
+                                "isBreakout"
+                            ],
+                            "properties": {
+                                "query": {
+                                    "type": "string"
+                                },
+                                "value": {
+                                    "type": "number"
+                                },
+                                "formattedValue": {
+                                    "type": "string"
+                                },
+                                "link": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "isBreakout": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    "rising": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "query",
+                                "value",
+                                "formattedValue",
+                                "link",
+                                "isBreakout"
+                            ],
+                            "properties": {
+                                "query": {
+                                    "type": "string"
+                                },
+                                "value": {
+                                    "type": "number"
+                                },
+                                "formattedValue": {
+                                    "type": "string"
+                                },
+                                "link": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "isBreakout": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "additionalProperties": false
+            },
+            "relatedTopics": {
+                "type": "object",
+                "required": [
+                    "status",
+                    "top",
+                    "rising"
+                ],
+                "properties": {
+                    "status": {
+                        "enum": [
+                            "ok",
+                            "empty",
+                            "failed",
+                            "skipped"
+                        ]
+                    },
+                    "error": {
+                        "type": "string"
+                    },
+                    "top": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "mid",
+                                "title",
+                                "type",
+                                "value",
+                                "formattedValue",
+                                "link",
+                                "isBreakout"
+                            ],
+                            "properties": {
+                                "mid": {
+                                    "type": "string"
+                                },
+                                "title": {
+                                    "type": "string"
+                                },
+                                "type": {
+                                    "type": "string"
+                                },
+                                "value": {
+                                    "type": "number"
+                                },
+                                "formattedValue": {
+                                    "type": "string"
+                                },
+                                "link": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "isBreakout": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    "rising": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "mid",
+                                "title",
+                                "type",
+                                "value",
+                                "formattedValue",
+                                "link",
+                                "isBreakout"
+                            ],
+                            "properties": {
+                                "mid": {
+                                    "type": "string"
+                                },
+                                "title": {
+                                    "type": "string"
+                                },
+                                "type": {
+                                    "type": "string"
+                                },
+                                "value": {
+                                    "type": "number"
+                                },
+                                "formattedValue": {
+                                    "type": "string"
+                                },
+                                "link": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "isBreakout": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "additionalProperties": false
+            },
+            "scrapedAt": {
+                "type": "string",
+                "format": "date-time"
+            }
+        }
+    },
+    "views": {
+        "overview": {
+            "title": "Overview",
+            "transformation": {
+                "fields": [
+                    "keyword",
+                    "geo",
+                    "timeRange",
+                    "status",
+                    "interestOverTime.status",
+                    "relatedQueries.status",
+                    "scrapedAt"
+                ],
+                "flatten": [
+                    "interestOverTime",
+                    "relatedQueries"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "keyword": {
+                        "label": "Keyword",
+                        "format": "text"
+                    },
+                    "geo": {
+                        "label": "Region",
+                        "format": "text"
+                    },
+                    "timeRange": {
+                        "label": "Time range",
+                        "format": "text"
+                    },
+                    "status": {
+                        "label": "Status",
+                        "format": "text"
+                    },
+                    "interestOverTime.status": {
+                        "label": "Interest over time",
+                        "format": "text"
+                    },
+                    "relatedQueries.status": {
+                        "label": "Related queries",
+                        "format": "text"
+                    },
+                    "scrapedAt": {
+                        "label": "Scraped at",
+                        "format": "date"
+                    }
+                }
+            }
+        }
+    }
+}
