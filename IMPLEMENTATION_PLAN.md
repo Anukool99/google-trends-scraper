@@ -194,6 +194,35 @@ Input: `coffee`, `solar panels`, `chatgpt`; US; `today 12-m`; RESIDENTIAL proxy;
 - **Not tested yet:** sustained 429s on residential IPs over long batches,
   so the risk from Part 5 that a session never rotates is still open.
 
+### 1e. Part 9 pre-release cloud run (MEASURED, 2026-10-22 16:11 UTC, build 0.1.3)
+
+Run `IXN86pD7ta5052ABf`: 20 keywords (brands, generic, seasonal, multi-word,
+one made-up term); US; `today 12-m`; RESIDENTIAL; Actor default run options.
+
+| Metric | Value |
+|---|---|
+| Result | 20/20 `ok`, `aborted: false`, SUCCEEDED |
+| Duration | 219.2 s scraping (≈ 11 s/keyword), 221.3 s billed |
+| 429s | 6 retries on 3 keywords (`multiline` ×2, `relatedsearches` ×4), all recovered by retry 2 |
+| Peak memory | 85 MB |
+| Schema | 20/20 valid; 53 weekly points each, last partial; made-up term → timeline and queries `empty` |
+| **Allocated memory** | **4096 MB**, not 256 |
+| Cost | $0.0513: compute $0.0492 (0.246 CU), residential $0.0019 (0.24 MB) |
+
+- **Finding: `defaultRunOptions` in `actor.json` did not apply.**
+  - The Actor-level default in Console was 4096 MB, set when `apify push`
+    first created the Actor. It overrides the build's `defaultRunOptions`
+    (256 MB).
+  - Fix before publishing: Console → Actor → Settings → default memory
+    256 MB. Otherwise Store users pay about 16× the compute they need.
+  - At 256 MB this run is estimated at about $0.005 (compute ÷ 16 plus the
+    same proxy cost).
+- The sticky session never rotating (Part 5) did no harm over 20 keywords
+  of residential traffic. Sustained blocking is still untested, and the
+  circuit breaker covers it.
+- The `coffee` rising queries again had the same off-topic entries,
+  reordered. They are stable in Google's data.
+
 ## 2. MVP scope
 
 **In:** batch of keywords (each queried separately), geo, time range, category,

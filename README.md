@@ -210,16 +210,20 @@ indications.
 | Run | Keywords | Duration | Peak memory | Retries | Cost |
 |---|---|---|---|---|---|
 | Apify cloud, residential proxy, 256 MB | 3 (US, 12 months) | 28.1 s scraping, 31.0 s billed | 64 MB | 0 | **$0.00088** total (≈ $0.0003 per keyword): $0.00043 compute (0.00216 CU) + $0.00032 residential proxy (~40 KB) |
+| Apify cloud, residential proxy, **4096 MB** | 20 (US, 12 months) | 219.2 s scraping, 221.3 s billed | 85 MB | 6 (on 3 keywords, all recovered) | **$0.0513** total: $0.0492 compute (0.246 CU at 4096 MB) + $0.0019 residential proxy (~0.24 MB). At 256 MB the compute part would be about 1/16 (estimated ≈ $0.005 total). |
 | Local, no proxy | 3 | 29.3 s | 109 MB | 0 | — |
 | Local, no proxy | 10 (worldwide, 5 years) | 96.0 s | 109 MB | 1 | — |
 
 - Locally, a keyword took about 8–13 s (≈ 10 s on average), mostly because the
   Actor waits at least 3 s between requests and makes 3 requests per keyword
   (one more with related topics on).
-- The default memory is **256 MB**, which was enough in every run.
-- **Estimated, not measured:** a 20-keyword run takes about 3–4 minutes and costs
-  about $0.006, if Google doesn't rate-limit it. Retries add time (up to about
-  5 minutes per blocked request at the default `maxRetries`) and therefore cost.
+- In the cloud, a 20-keyword run took 3 min 39 s (≈ 11 s per keyword), and all
+  20 keywords came back `ok`.
+- Peak memory never went above 109 MB, so **256 MB** (the default) is enough.
+  Compute is billed by the memory you allocate, not by what is used, so a
+  larger setting only costs more.
+- Retries add time (up to about 5 minutes per blocked request at the default
+  `maxRetries`) and therefore cost.
 - Prices are from the Apify FREE plan at the time of the test. Apify pricing can
   change, and proxy traffic is billed separately from compute.
 
@@ -246,7 +250,8 @@ indications.
   ~7.5 minutes, and one section still failed after all retries. Later runs saw
   0–1 429s. The Actor retries with growing waits, and if 3
   keywords in a row fail it stops requesting and marks the rest `ABORTED`.
-  Long batches on residential proxies have not been tested yet.
+  A 20-keyword cloud run on residential proxies saw 6 retries on 3 keywords,
+  and all of them recovered.
 - **One keyword at a time.** There is no parallelism, by design, to stay under
   Google's rate limits. The run uses one proxy session that doesn't rotate.
 - **Unofficial endpoints.** If Google changes them, sections fail with
