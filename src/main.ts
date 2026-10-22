@@ -2,7 +2,7 @@ import { Actor, log } from 'apify';
 
 import { InputError, parseInput } from './input.js';
 import { errorMessage } from './redact.js';
-import { runActor } from './run.js';
+import { MAX_CONSECUTIVE_FAILED_KEYWORDS, runActor } from './run.js';
 import { TrendsClient } from './trends/client.js';
 
 /** Thrown for problems the user can fix; the message is already safe to show. */
@@ -11,6 +11,12 @@ class SetupError extends Error {}
 await Actor.init();
 
 let client: TrendsClient | undefined;
+// Actor.fail exits the process, so the client is closed first.
+const fail = async (message: string): Promise<never> => {
+    await client?.close();
+    await Actor.fail(message);
+    throw new Error('unreachable: Actor.fail returned');
+};
 try {
     const input = parseInput(await Actor.getInput());
     log.info('Input validated', {
@@ -42,7 +48,9 @@ try {
             ),
         });
     } catch (err) {
-        throw new SetupError(`Proxy configuration failed: ${errorMessage(err)}`);
+        const proxyUrls = input.proxyConfiguration?.proxyUrls;
+        const userProxyUrls = Array.isArray(proxyUrls) ? proxyUrls.filter((u): u is string => typeof u === 'string') : [];
+        throw new SetupError(`Proxy configuration failed: ${errorMessage(err, userProxyUrls)}`);
     }
     log.info(proxyUrl ? 'Using proxy' : 'No proxy configured; Google may rate-limit heavily');
 
@@ -53,18 +61,21 @@ try {
         now: () => new Date(),
         log,
     });
-    log.info('Run finished', { ok: summary.ok, partial: summary.partial, failed: summary.failed, durationMs: summary.durationMs });
+    log.info('Run finished', { ok: summary.ok, partial: summary.partial, failed: summary.failed, aborted: summary.aborted, durationMs: summary.durationMs });
 
     if (summary.failed === summary.keywords) {
-        await Actor.fail(`All ${summary.keywords} keywords failed. See the dataset records' error fields for details.`);
+        await fail(`All ${summary.keywords} keywords failed. See the dataset records' error fields for details.`);
+    }
+    if (summary.aborted) {
+        await fail(`Stopped early: ${MAX_CONSECUTIVE_FAILED_KEYWORDS} keywords in a row failed, so Google is probably blocking requests. `
+            + `${summary.ok + summary.partial} of ${summary.keywords} keywords have data; try again later or with a residential proxy.`);
     }
 } catch (err) {
-    // Every failure ends the run through Actor.fail so it gets a status message; Actor.fail exits the process.
+    // Every failure ends the run through Actor.fail so it gets a status message.
     const message = err instanceof InputError || err instanceof SetupError ? err.message : `Run failed unexpectedly: ${errorMessage(err)}`;
     log.error(message);
-    await Actor.fail(message);
-} finally {
-    await client?.close();
+    await fail(message);
 }
 
+await client?.close();
 await Actor.exit();

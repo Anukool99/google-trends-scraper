@@ -19,4 +19,7 @@ RUN npm ci --omit=dev --omit=optional --audit=false \
 COPY --from=builder --chown=myuser /usr/src/app/dist ./dist
 COPY --chown=myuser .actor ./.actor
 
+# The base image already runs as this non-root user; stated explicitly for readers.
+USER myuser
+
 CMD ["npm", "start", "--silent"]

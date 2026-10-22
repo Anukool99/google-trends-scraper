@@ -2,6 +2,16 @@ import { SourceChangedError, TrendsError } from './trends/errors.js';
 
 const TRENDS_ORIGIN = 'https://trends.google.com';
 
+/** Google sends site-relative links. Anything that would resolve off trends.google.com (e.g. `@evil.com/x`) becomes null. */
+function trendsLink(path: string): string | null {
+    if (!path.startsWith('/') || path.startsWith('//')) return null;
+    try {
+        return new URL(TRENDS_ORIGIN + path).origin === TRENDS_ORIGIN ? TRENDS_ORIGIN + path : null;
+    } catch {
+        return null;
+    }
+}
+
 export type SectionStatus = 'ok' | 'empty' | 'failed' | 'skipped';
 export type RecordStatus = 'ok' | 'partial' | 'failed';
 
@@ -115,7 +125,7 @@ function rankedFields(item: Obj, isRising: boolean, where: string) {
     return {
         value: item.value,
         formattedValue,
-        link: typeof item.link === 'string' ? TRENDS_ORIGIN + item.link : null,
+        link: typeof item.link === 'string' ? trendsLink(item.link) : null,
         isBreakout: isRising && formattedValue === 'Breakout',
     };
 }

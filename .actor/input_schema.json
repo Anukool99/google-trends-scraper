@@ -40,6 +40,7 @@
             "type": "string",
             "description": "Language for labels and related queries, e.g. en-US.",
             "editor": "textfield",
+            "pattern": "^[a-z]{2,3}(-[A-Za-z]{2,4})?$",
             "default": "en-US"
         },
         "includeRelatedQueries": {
@@ -57,7 +58,7 @@
         "maxRetries": {
             "title": "Max retries",
             "type": "integer",
-            "description": "How many times to retry a request after a rate-limit (429) or server error before marking that section as failed.",
+            "description": "How many times to retry a request after a rate-limit (429), timeout or server error before marking that section as failed. Waits grow from about 4 s to 60 s, so a blocked request can take about 5 minutes at the default and about 10 minutes at 8. The run stops early after 3 keywords in a row fail.",
             "default": 5,
             "minimum": 0,
             "maximum": 8

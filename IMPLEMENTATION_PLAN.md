@@ -577,6 +577,72 @@ temporary local storage dir)
   rotates, so one blocked exit IP fails the whole run. Part 6 will measure
   whether rotating it on repeated 429s is needed.
 
+### Part 7 contract (audit fixes, exact spec for tests)
+
+**Circuit breaker (`src/run.ts`).**
+- `MAX_CONSECUTIVE_FAILED_KEYWORDS = 3` is exported.
+- After 3 keywords **in a row** have record `status: 'failed'` (any cause),
+  the remaining keywords are not requested. No client call is made for them.
+  - Each one still gets exactly one pushed record, in input order.
+  - That record has `status: 'failed'`. Every *requested* section is
+    `failed` with error
+    `ABORTED: not requested: the run stopped after 3 failed keywords in a row`.
+  - Sections that weren't requested stay `skipped`.
+  - They count as `failed` in the summary.
+- A keyword that is `ok` or `partial` resets the count.
+- If the third failure in a row is the **last** keyword, nothing is aborted.
+- When it trips, there is one `error` log line saying how many keywords
+  are skipped.
+- `RunSummary.aborted: boolean` is `true` only when the breaker tripped.
+- `RunAbortedError` (code `ABORTED`, not retryable) is exported from
+  `src/trends/errors.ts`, and `TrendsErrorCode` includes `'ABORTED'`.
+
+**Keyword log line.** For `partial` and `failed` keywords, the log data also
+has `error`: the first section error, in the order interestOverTime,
+relatedQueries, relatedTopics. `ok` lines have no `error` key.
+
+**`main.ts`.**
+- When `summary.aborted` is true and not every keyword failed, the run
+  fails with a status message starting `Stopped early: 3 keywords in a row
+  failed`. If every keyword failed, the existing "All N keywords failed"
+  message is used.
+- The proxy agent is closed before every `Actor.fail` and before
+  `Actor.exit`.
+
+**Redaction (`src/redact.ts`).**
+- `redactUrlCredentials` cuts text longer than 4000 characters before
+  redacting. It drops the trailing partial word and appends `…`, so 100 000
+  characters of input finish in well under a second.
+- `errorMessage(err, proxyUrls = [])`: each proxy URL is replaced verbatim
+  by `<proxy>`. Its `user:password` and password are replaced by
+  `<redacted>`. These are taken from between `://` and the last `@`, without
+  URL parsing, so a password with an unencoded `/` is covered. Then
+  `redactUrlCredentials` applies.
+- `main.ts` passes the input's `proxyUrls` when reporting a proxy setup
+  failure.
+
+**Input (`src/input.ts`).**
+- A keyword whose trimmed value contains a control character
+  (U+0000–U+001F, U+007F) is invalid:
+  `keywords[i]: contains control characters (e.g. a line break)`.
+- Leading and trailing whitespace, including `\n` and `\t`, is still just
+  trimmed.
+
+**Links (`src/normalize.ts`).** A related-query `link` is
+`https://trends.google.com` + the link only if the link starts with a single
+`/` and the result's origin is still `https://trends.google.com`. Otherwise
+the link is `null`, for example `@evil.com/x`, `//evil.com` or
+`https://evil.com`.
+
+**Client.** A widget whose `id` is an inherited property name (`constructor`,
+`__proto__`, `toString`) is ignored like any unknown widget.
+
+**Config.**
+- `.actor/actor.json` `defaultRunOptions` is 256 MB and 3600 s.
+- The input schema `language` field has the §3 pattern.
+- `package.json` `overrides` pins `basic-ftp` to ^6.2.3, which clears 5
+  high advisories reached only through PAC/ftp proxy URLs.
+
 ### Agent roster
 
 | Agent | Implemented as | Owns | Must not |

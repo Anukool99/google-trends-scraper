@@ -124,7 +124,9 @@ function parseKeywords(value: unknown, issues: string[]): string[] {
         const problem = typeof item !== 'string' ? 'must be a string'
             : !item.trim() ? 'is empty'
                 : item.trim().length > MAX_KEYWORD_LENGTH ? `is longer than ${MAX_KEYWORD_LENGTH} characters`
-                    : undefined;
+                    // eslint-disable-next-line no-control-regex -- matching control characters is the point
+                    : /[\u0000-\u001f\u007f]/.test(item.trim()) ?'contains control characters (e.g. a line break)'
+                        : undefined;
         if (problem) {
             issues.push(`keywords[${i}]: ${problem}`);
             itemsValid = false;

@@ -2,8 +2,8 @@
 // "Part 5 contract" (+ Part 4 record shapes / rollupStatus, Part 3 error classes). Not from src/.
 import { describe, expect, it } from 'vitest';
 import { parseInput, type ValidatedInput } from '../src/input.js';
-import { runActor, scrapeKeyword, type RunDeps, type RunSummary } from '../src/run.js';
-import { RateLimitedError, TokenMismatchError, httpError } from '../src/trends/errors.js';
+import { MAX_CONSECUTIVE_FAILED_KEYWORDS, runActor, scrapeKeyword, type RunDeps, type RunSummary } from '../src/run.js';
+import { RateLimitedError, RunAbortedError, TokenMismatchError, TrendsError, httpError } from '../src/trends/errors.js';
 import {
     QUERIES_OK as RQ,
     RELATED_EMPTY,
@@ -540,3 +540,157 @@ describe('runActor: logs', () => {
     });
 });
 
+
+// ---------------------------------------------------------------- Part 7: circuit breaker + log error key
+
+const ABORTED_MSG = 'ABORTED: not requested: the run stopped after 3 failed keywords in a row';
+const FAIL: KeywordScript = { explore: () => Promise.reject(new RateLimitedError('explore')) };
+const PARTIAL: KeywordScript = { relatedQueries: () => Promise.reject(serverError('widgetdata/relatedsearches')) };
+const kwInput = (keywords: string[], extra: Record<string, unknown> = {}): ValidatedInput =>
+    parseInput({ keywords, includeRelatedQueries: true, includeRelatedTopics: false, ...extra }, NOW);
+const explored = (h: Harness): string[] => h.fake.calls.filter((c) => c.method === 'explore').map((c) => (c.arg as Query).keyword);
+const logText = (args: unknown[]): string => args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+
+describe('runActor: circuit breaker (Part 7)', () => {
+    it('MAX_CONSECUTIVE_FAILED_KEYWORDS is 3', () => {
+        expect(MAX_CONSECUTIVE_FAILED_KEYWORDS).toBe(3);
+    });
+
+    it('RunAbortedError has code ABORTED and is not retryable', () => {
+        const Ctor = RunAbortedError as unknown as new (...a: unknown[]) => TrendsError;
+        const e = new Ctor('stopped');
+        expect(e).toBeInstanceOf(TrendsError);
+        expect(e.code).toBe('ABORTED');
+        expect(e.retryable).toBe(false);
+    });
+
+    it('3 failed in a row -> remaining keywords not requested, ABORTED records pushed in order', async () => {
+        const kws = ['kw-a', 'kw-b', 'kw-c', 'kw-d', 'kw-e', 'kw-f', 'kw-g'];
+        const h = harness({ 'kw-a': FAIL, 'kw-b': FAIL, 'kw-c': FAIL });
+        const summary = (await runActor(kwInput(kws), h.deps)) as unknown as Record<string, unknown>;
+
+        expect(explored(h)).toEqual(['kw-a', 'kw-b', 'kw-c']);
+        expect(h.fake.calls.every((c) => c.method === 'explore')).toBe(true);
+        expect(h.pushed.map((r) => r.keyword)).toEqual(kws);
+        for (const r of h.pushed.slice(3)) {
+            expect(r.status).toBe('failed');
+            expect(r.interestOverTime).toEqual({ status: 'failed', error: ABORTED_MSG, resolution: null, points: null });
+            expect(r.relatedQueries).toEqual({ status: 'failed', error: ABORTED_MSG, top: null, rising: null });
+            expect(r.relatedTopics).toEqual({ status: 'skipped', top: null, rising: null });
+            expect(schemaErrors(r)).toBe('');
+        }
+        expect(summary.aborted).toBe(true);
+        expect(summary.keywords).toBe(7);
+        expect(summary.failed).toBe(7);
+        expect(summary.ok).toBe(0);
+        expect(summary.partial).toBe(0);
+        expect(summary.sections).toEqual({
+            interestOverTime: { ok: 0, empty: 0, failed: 7, skipped: 0 },
+            relatedQueries: { ok: 0, empty: 0, failed: 7, skipped: 0 },
+            relatedTopics: { ok: 0, empty: 0, failed: 0, skipped: 7 },
+        });
+        expect(h.outputs).toEqual([summary]);
+
+        const breaker = h.log.entries.filter((e) => e.level === 'error' && typeof e.args[0] === 'string' && !e.args[0].includes('kw-') && /skip/i.test(e.args[0]));
+        expect(breaker, JSON.stringify(h.log.entries)).toHaveLength(1);
+        expect(logText(breaker[0]!.args)).toMatch(/\b4\b/);
+    });
+
+    it('breaker trips after an ok keyword too (only consecutive failures count)', async () => {
+        const h = harness({ 'kw-b': FAIL, 'kw-c': FAIL, 'kw-d': FAIL });
+        const summary = (await runActor(kwInput(['kw-a', 'kw-b', 'kw-c', 'kw-d', 'kw-e']), h.deps)) as unknown as Record<string, unknown>;
+        expect(explored(h)).toEqual(['kw-a', 'kw-b', 'kw-c', 'kw-d']);
+        expect(h.pushed.map((r) => r.status)).toEqual(['ok', 'failed', 'failed', 'failed', 'failed']);
+        expect(h.pushed[4]!.interestOverTime.error).toBe(ABORTED_MSG);
+        expect(summary.aborted).toBe(true);
+        expect(summary.ok).toBe(1);
+        expect(summary.failed).toBe(4);
+    });
+
+    it('an ok keyword resets the count', async () => {
+        const h = harness({ 'kw-a': FAIL, 'kw-b': FAIL, 'kw-d': FAIL, 'kw-e': FAIL });
+        const kws = ['kw-a', 'kw-b', 'kw-c', 'kw-d', 'kw-e', 'kw-f'];
+        const summary = (await runActor(kwInput(kws), h.deps)) as unknown as Record<string, unknown>;
+        expect(explored(h)).toEqual(kws);
+        expect(summary.aborted).toBe(false);
+        expect(JSON.stringify(h.pushed)).not.toContain('ABORTED');
+    });
+
+    it('a partial keyword resets the count', async () => {
+        const h = harness({ 'kw-a': FAIL, 'kw-b': FAIL, 'kw-c': PARTIAL, 'kw-d': FAIL, 'kw-e': FAIL });
+        const kws = ['kw-a', 'kw-b', 'kw-c', 'kw-d', 'kw-e', 'kw-f'];
+        const summary = (await runActor(kwInput(kws), h.deps)) as unknown as Record<string, unknown>;
+        expect(explored(h)).toEqual(kws);
+        expect(h.pushed.map((r) => r.status)).toEqual(['failed', 'failed', 'partial', 'failed', 'failed', 'ok']);
+        expect(summary.aborted).toBe(false);
+    });
+
+    it('third failure on the last keyword -> nothing aborted, aborted false', async () => {
+        const h = harness({ 'kw-b': FAIL, 'kw-c': FAIL, 'kw-d': FAIL });
+        const summary = (await runActor(kwInput(['kw-a', 'kw-b', 'kw-c', 'kw-d']), h.deps)) as unknown as Record<string, unknown>;
+        expect(explored(h)).toEqual(['kw-a', 'kw-b', 'kw-c', 'kw-d']);
+        expect(summary.aborted).toBe(false);
+        expect(JSON.stringify(h.pushed)).not.toContain('ABORTED');
+        expect(h.log.entries.filter((e) => e.level === 'error' && typeof e.args[0] === 'string' && !e.args[0].includes('kw-') && /skip/i.test(e.args[0]))).toHaveLength(0);
+    });
+
+    it('failures from widget errors (not explore) also count', async () => {
+        const allFail: KeywordScript = {
+            timeseries: () => Promise.reject(serverError('m')),
+            relatedQueries: () => Promise.reject(serverError('r')),
+        };
+        const h = harness({ 'kw-a': allFail, 'kw-b': allFail, 'kw-c': allFail });
+        const summary = (await runActor(kwInput(['kw-a', 'kw-b', 'kw-c', 'kw-d']), h.deps)) as unknown as Record<string, unknown>;
+        expect(explored(h)).toEqual(['kw-a', 'kw-b', 'kw-c']);
+        expect(summary.aborted).toBe(true);
+    });
+
+    it('summary.aborted is false on a normal run', async () => {
+        const h = harness(GATE_SCRIPTS);
+        const summary = (await runActor(input(), h.deps)) as unknown as Record<string, unknown>;
+        expect(summary.aborted).toBe(false);
+    });
+});
+
+describe('runActor: keyword log line error key (Part 7)', () => {
+    const dataOf = (args: unknown[]): Record<string, unknown> | undefined =>
+        args.find((a): a is Record<string, unknown> => typeof a === 'object' && a !== null);
+
+    it('partial/failed lines carry the first section error; ok lines have no error key', async () => {
+        const h = harness({
+            ...GATE_SCRIPTS,
+            // gamma: explore ok, every section fails -> first error is interestOverTime's
+            gamma: {
+                timeseries: () => Promise.reject(serverError('widgetdata/multiline')),
+                relatedQueries: () => Promise.reject(new RateLimitedError('r')),
+                relatedTopics: () => Promise.reject(new Error('z')),
+            },
+        });
+        await runActor(input(), h.deps);
+        const byKw = (kw: string) => {
+            const lines = h.log.entries.filter((e) => e.level !== 'debug' && logText(e.args).includes(kw));
+            expect(lines, kw).toHaveLength(1);
+            return lines[0]!;
+        };
+        const [alpha, beta, gamma] = h.pushed;
+        expect([alpha!.status, beta!.status, gamma!.status]).toEqual(['ok', 'partial', 'failed']);
+
+        const a = dataOf(byKw('alpha').args);
+        expect(a === undefined || !('error' in a)).toBe(true);
+
+        const b = dataOf(byKw('beta').args);
+        expect(b?.error).toBe(beta!.relatedQueries.error);
+
+        const g = dataOf(byKw('gamma').args);
+        expect(g?.error).toBe(gamma!.interestOverTime.error);
+        expect(String(g?.error)).toMatch(/^HTTP_ERROR: /);
+    });
+
+    it('partial keyword whose only failure is a later section uses that section error', async () => {
+        const h = harness({ 'kw-a': { relatedTopics: () => Promise.reject(new Error('t-fail')) } });
+        await runActor(kwInput(['kw-a'], { includeRelatedTopics: true }), h.deps);
+        const line = h.log.entries.find((e) => logText(e.args).includes('kw-a'))!;
+        expect(line.level).toBe('warning');
+        expect(dataOf(line.args)?.error).toBe('INTERNAL: t-fail');
+    });
+});

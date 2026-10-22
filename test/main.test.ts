@@ -74,4 +74,18 @@ describe('main.ts with an unusable proxy', () => {
         expect(r.output).not.toContain('S3cretPW');
         expect(datasetRecords(r.storage)).toEqual([]);
     });
+
+    it('proxy password containing "/" never printed', () => {
+        const r = runMain(
+            JSON.stringify({
+                keywords: ['coffee'],
+                proxyConfiguration: { useApifyProxy: false, proxyUrls: ['http://bob:S3c/retPW@not a host:1'] },
+            }),
+        );
+        expect(r.status, r.output).not.toBe(0);
+        expect(r.status, r.output).not.toBeNull();
+        expect(r.output).not.toContain('S3c/retPW');
+        expect(r.output).not.toContain('retPW');
+        expect(datasetRecords(r.storage)).toEqual([]);
+    });
 });

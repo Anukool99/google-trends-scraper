@@ -1,4 +1,4 @@
-export type TrendsErrorCode = 'RATE_LIMITED' | 'TOKEN_MISMATCH' | 'HTTP_ERROR' | 'NETWORK_ERROR' | 'SOURCE_CHANGED';
+export type TrendsErrorCode = 'RATE_LIMITED' | 'TOKEN_MISMATCH' | 'HTTP_ERROR' | 'NETWORK_ERROR' | 'SOURCE_CHANGED' | 'ABORTED';
 
 /** Base class for every failure talking to Google Trends. `retryable` drives the retry loop. */
 export class TrendsError extends Error {
@@ -42,6 +42,13 @@ export class NetworkError extends TrendsError {
 export class SourceChangedError extends TrendsError {
     constructor(message: string, options?: ErrorOptions) {
         super('SOURCE_CHANGED', message, false, options);
+    }
+}
+
+/** The keyword was never requested because the run stopped early (see the circuit breaker in run.ts). */
+export class RunAbortedError extends TrendsError {
+    constructor(message: string) {
+        super('ABORTED', message, false);
     }
 }
 

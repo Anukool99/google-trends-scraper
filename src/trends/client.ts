@@ -138,7 +138,7 @@ export class TrendsClient {
 
         const result: ExploreResult = {};
         for (const w of widgets as Partial<Widget>[]) {
-            const key = w.id ? WIDGET_KEYS[w.id] : undefined;
+            const key = w.id && Object.hasOwn(WIDGET_KEYS, w.id) ? WIDGET_KEYS[w.id] : undefined;
             if (!key) continue;
             if (typeof w.token !== 'string' || w.request === undefined) throw new SourceChangedError(`explore widget ${w.id} has no token or request`);
             result[key] = { id: w.id!, request: w.request, token: w.token };
