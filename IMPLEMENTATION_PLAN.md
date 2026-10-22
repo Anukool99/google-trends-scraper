@@ -256,13 +256,90 @@ output.
 | **0. Source spike** | Findings table (§1) + recorded fixtures | **Source Researcher** (general-purpose) | Probe 5 keywords × 2 geos × 2 time ranges; record raw responses as fixtures; measure 429 rate and latency | Lead | Fixtures saved for: ok timeseries, ok related, empty related, 429 HTML. Findings written down |
 | **1. Scaffold** | package.json, tsconfig, `.actor/*`, Dockerfile, lint, vitest | **Builder** (main session) | Project skeleton only, no scraping logic | Lead | `npm ci`, `npm run build`, `npm test` (placeholder test), `npm run lint` all succeed |
 | **2. Input validation** | `src/input.ts` + tests | **Builder** | Defaults, limits, dedupe, custom-date parsing, clear error messages | **Test Engineer** | ≥15 unit cases: valid, each invalid field, boundaries (0/20/21 keywords), custom range errors |
-| **3. Trends client + retry** | `src/trends/*` + tests | **Builder** | Cookie warm-up, two-step flow, XSSI strip, retry classifier by HTTP status only (retry 429/5xx/network even if the body says not to; no retry 400/parse; on 401 token mismatch re-run explore at most once), backoff with jitter and cap | **Test Engineer** | Mocked-fetch tests: 429→cookie→200; 429×N → `RateLimitedError` after exactly `maxRetries`; 400 not retried; malformed JSON → `SourceChangedError`; fake timers check the backoff delays |
+| **3. Trends client + retry** | `src/trends/*` + tests | **Builder** | Cookie warm-up, two-step flow, XSSI strip, retry classifier by HTTP status only (retry 429/5xx/network even if the body says not to; no retry 400/401/parse; 401 → `TokenMismatchError`, and re-running explore once is Part 5's job because it needs the query), backoff with jitter and cap | **Test Engineer** | Mocked-fetch tests: 429→cookie→200; 429×N → `RateLimitedError` after exactly `maxRetries`; 400 not retried; malformed JSON → `SourceChangedError`; fake timers check the backoff delays |
 | **4. Normalization** | `src/normalize.ts` + tests | **Builder** | Fixture → schema mapping; `hasData:false`→null; partial points; empty vs failed sections | **Test Engineer** | Fixture snapshot tests; output matches `dataset_schema.json` (schema-validated in the test) |
 | **5. Orchestration** | `src/main.ts` | **Builder** | Sequential queue, per-keyword isolation (one failure doesn't stop the run), `status` rollup, `OUTPUT` summary, logs that leak no secrets | **Code Reviewer** (feature-dev:code-reviewer) | Integration test with mocked client: 3 keywords (ok / partial / failed) → 3 records with the right statuses; run exits 0. Invalid input exits non-zero |
 | **6. Real-data verification** | `scripts/smoke.ts` + measured numbers | **Test Engineer** | Run locally on 3 keywords, inspect the output by hand, record duration, success rate per section and memory use | Lead + **you** | Smoke run produces schema-valid records; the numbers are recorded. **Apify cloud run (proxy cost) only with your approval** |
 | **7. Audit** | Findings list + fixes | **Code Reviewer** + **Security Reviewer** (`/security-review`) | Retries are bounded, concurrency is bounded, no secrets in the repo or logs, `.gitignore` is complete, error paths are visible | Lead | No unresolved high-severity findings; `git ls-files` shows only intended files |
 | **8. Docs & listing** | README, listing text, pricing notes | **Docs Writer** (general-purpose) | Input and output examples taken from real smoke output, limitations (§1, the cross-keyword scale caveat), measured cost per keyword | Lead + **you** | Every claim in the README traces to a test or a measurement; the definition-of-done checklist is ticked |
 | **9. Release** | Push + Apify publish | **Lead** | Final checklist, commit, push | **you** | **Publishing requires your explicit approval** |
+
+### Part 3 contract (`src/trends/*`, exact spec for tests)
+
+**`errors.ts`**
+
+- All errors extend `TrendsError` with these fields:
+  - `code`: `RATE_LIMITED`, `TOKEN_MISMATCH`, `HTTP_ERROR`, `NETWORK_ERROR` or
+    `SOURCE_CHANGED`
+  - `retryable`
+  - `attempts`, which defaults to 1
+- `httpError(status, endpoint)` returns:
+  - 429 → `RateLimitedError`, retryable
+  - 401 → `TokenMismatchError`, not retryable
+  - ≥500 → `HttpStatusError`, retryable
+  - any other non-200 → `HttpStatusError`, not retryable
+- Each error carries its `status`. Classification uses the status code only,
+  never the body text.
+- `NetworkError` is retryable. `SourceChangedError` is not.
+
+**`retry.ts`**
+
+- `backoffDelay(retry, base, max, random)` =
+  `round(min(max, base·2^(retry−1)) · (0.5 + random()·0.5))`.
+- `withRetry(fn, {maxRetries, baseDelayMs, maxDelayMs, sleep, random, onRetry})`
+  calls `fn` at most `maxRetries + 1` times.
+  - It retries only `TrendsError`s whose `retryable` is true. Anything else,
+    including plain `Error`s, is thrown at once with no retry.
+  - Before each retry it calls `onRetry({attempt, delayMs, error})`, then
+    `sleep(delayMs)`.
+  - The error finally thrown has `attempts` = the number of calls made.
+
+**`client.ts`: `new TrendsClient({language, maxRetries, fetch, sleep, random, now, minRequestIntervalMs=3000, baseDelayMs=4000, maxDelayMs=60000, proxyUrl?, onRetry?})`**
+
+- **Requests.**
+  - Every request is a GET to `https://trends.google.com/trends/api/<endpoint>`
+    with query params `hl=<language>`, `tz=0` and `req=<json>`, plus `token`
+    for widget calls.
+  - Headers include `User-Agent` and `Accept-Language`.
+- **Pacing.** The start of each HTTP request is at least
+  `minRequestIntervalMs` after the previous one's start, measured with `now()`
+  and waited out with `sleep()`.
+- **Cookies.**
+  - `Set-Cookie` values, taken via `response.headers.getSetCookie()`, are
+    stored by name. Later values overwrite earlier ones.
+  - They are sent back as `Cookie: a=1; b=2` on every later request.
+- **`explore({keyword, geo, timeRange, category})`.**
+  - `req` = `{"comparisonItem":[{"keyword","geo","time":timeRange}],"category","property":""}`.
+  - Returns `{timeseries?, relatedQueries?, relatedTopics?}`, each
+    `{id, request, token}`, mapped from widget ids `TIMESERIES`,
+    `RELATED_QUERIES` and `RELATED_TOPICS`. Other widgets such as `GEO_MAP`
+    are ignored, and a missing widget is left `undefined`.
+  - **Warm-up.** If the session had no cookies, the response is 429 and that
+    response set a cookie, the request is repeated once at once (still
+    paced). That repeat does not use up a retry.
+  - A body without a `widgets` array → `SourceChangedError`.
+  - A known widget without `token` or `request` → `SourceChangedError`.
+- **`interestOverTime(widget)`** calls `widgetdata/multiline`, and
+  **`relatedSearches(widget)`** calls `widgetdata/relatedsearches`.
+  - Both send `req = JSON.stringify(widget.request)` and `token`.
+  - Both return the parsed `default` object.
+  - A missing or non-object `default` → `SourceChangedError`.
+- **Parsing.**
+  - The `)]}'` / `)]}',` first line is stripped before `JSON.parse`. A body
+    without the prefix is parsed as is.
+  - A body that is not JSON → `SourceChangedError`, which is not retried.
+- **Errors.** Non-200 statuses go through `httpError`. A thrown `fetch`
+  becomes `NetworkError`. Both are retried per `withRetry`.
+- **Security.** Neither the proxy URL nor its password appears in error
+  messages. The password is checked raw and percent-decoded, including when it
+  appears outside the URL.
+- **Clarifications** (raised by the Part 3 tests):
+  - `status` lives on `HttpStatusError` and its subclasses, not on the base
+    `TrendsError`.
+  - `onRetry`'s `attempt` is the number of the call that just failed, so the
+    first retry reports `attempt: 1`.
+  - The warm-up repeat happens inside one retry attempt, so it is not counted
+    in `attempts`.
 
 ### Agent roster
 

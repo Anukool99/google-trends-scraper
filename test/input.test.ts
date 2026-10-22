@@ -356,3 +356,21 @@ describe('multiple problems', () => {
         expect(err.issues.some((i) => /^keywords[^[]/.test(i))).toBe(true);
     });
 });
+
+// §3 updated rule: "More than 20 is always reported, even alongside item issues. Fewer than 1 is
+// reported only when no item has an issue, because fixing an item could resolve it."
+describe('keyword count issue vs item issues (§3 updated rule)', () => {
+    const countIssues = (issues: string[]) => issues.filter((i) => /^keywords[^[]/.test(i));
+
+    it("{ keywords: [''] } -> keywords[0] issue but no top-level count issue", () => {
+        const err = catchInputError({ keywords: [''] });
+        expect(err.issues.some((i) => i.startsWith('keywords[0]')), JSON.stringify(err.issues)).toBe(true);
+        expect(countIssues(err.issues), JSON.stringify(err.issues)).toEqual([]);
+    });
+
+    it('21 unique valid + one empty -> both the item issue and the count issue', () => {
+        const err = catchInputError({ keywords: [...kw(21), ''] });
+        expect(err.issues.some((i) => i.startsWith('keywords[21]')), JSON.stringify(err.issues)).toBe(true);
+        expect(countIssues(err.issues), JSON.stringify(err.issues)).toHaveLength(1);
+    });
+});
