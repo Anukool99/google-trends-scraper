@@ -1,0 +1,18 @@
+{
+    "actorOutputSchemaVersion": 1,
+    "title": "Google Trends Scraper output",
+    "properties": {
+        "results": {
+            "type": "string",
+            "title": "Results",
+            "description": "One record per keyword: interest over time, related queries and (if enabled) related topics, each with its own status.",
+            "template": "{{links.apiDefaultDatasetUrl}}/items?view=overview"
+        },
+        "summary": {
+            "type": "string",
+            "title": "Run summary",
+            "description": "Counts of ok, partial and failed keywords and per-section statuses, whether the run stopped early, and timing.",
+            "template": "{{links.apiDefaultKeyValueStoreUrl}}/records/OUTPUT"
+        }
+    }
+}

@@ -54,7 +54,7 @@ import { ApifyClient } from 'apify-client';
 
 const client = new ApifyClient({ token: process.env.APIFY_TOKEN });
 
-const run = await client.actor('<username>/google-trends-scraper').call({
+const run = await client.actor('bytebee/google-trends-scraper').call({
     keywords: ['coffee', 'solar panels'],
     geo: 'US',
     timeRange: 'today 12-m',
