@@ -1,8 +1,8 @@
 {
     "actorSpecification": 1,
     "name": "google-trends-scraper",
-    "title": "Google Trends Scraper",
-    "description": "Collect Google Trends interest over time and related queries for a batch of keywords.",
+    "title": "Google Trends Scraper: Interest Over Time & Related Queries",
+    "description": "Get Google Trends interest over time (0–100) and top/rising related queries for up to 20 keywords per run. One JSON record per keyword with per-section status.",
     "version": "0.1",
     "buildTag": "latest",
     "input": "./input_schema.json",
